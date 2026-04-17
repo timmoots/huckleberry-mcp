@@ -45,3 +45,10 @@ htmlcov/
 
 # MCP
 *.log
+server.log
+
+# Fly
+.fly/
+
+# Local overrides
+claude_desktop_config.json

@@ -1,422 +1,119 @@
-"""Sleep tracking tools for Huckleberry MCP server.
+"""Sleep tracking tools: timer + retroactive logging + history."""
 
-Timer State Machine
--------------------
-Sleep sessions follow this state machine: IDLE -> RUNNING <-> PAUSED -> COMPLETED/CANCELLED
+from __future__ import annotations
 
-Valid operations by state:
-- start_sleep: IDLE -> RUNNING (fails if session already active for this child)
-- pause_sleep: RUNNING -> PAUSED (fails if not running)
-- resume_sleep: PAUSED -> RUNNING (fails if not paused)
-- complete_sleep: RUNNING/PAUSED -> saved to history (fails if no active session)
-- cancel_sleep: RUNNING/PAUSED -> discarded (fails if no active session)
+from datetime import timedelta
+from typing import Any, Optional
 
-Only one sleep session can be active per child at a time.
-"""
-
-import time
-import uuid
-from typing import Any, Dict, List, Optional
-from datetime import datetime, timezone, timedelta
-from ..auth import get_authenticated_api
+from ..auth import get_api
+from ..utils import parse_dt, to_local_iso
 from .children import validate_child_uid
-from ..utils import iso_to_timestamp, iso_datetime_to_timestamp, timestamp_to_local_iso
 
 
 async def log_sleep(
-    child_uid: str,
+    child_uid: Optional[str] = None,
+    *,
     start_time: str,
     end_time: Optional[str] = None,
-    duration_minutes: Optional[int] = None
-) -> Dict[str, Any]:
+    duration_minutes: Optional[int] = None,
+) -> dict[str, Any]:
+    """Retroactively log a completed sleep session.
+
+    Provide EITHER end_time OR duration_minutes.
+    Times are interpreted in America/New_York (EST/EDT) unless the input
+    carries an explicit offset.
     """
-    Directly log a completed sleep session without using the timer.
-
-    Useful for retroactive logging or importing sleep data. Does not require
-    an active timer session.
-
-    Args:
-        child_uid: The child's unique identifier (from list_children)
-        start_time: Sleep start time in ISO format (e.g., "2026-01-30T14:30:00" or "2026-01-30T14:30:00Z")
-        end_time: Sleep end time in ISO format (optional if duration_minutes provided)
-        duration_minutes: Sleep duration in minutes (optional if end_time provided)
-
-    Returns:
-        Dict with keys:
-        - success (bool): True if sleep was logged
-        - message (str): Human-readable confirmation
-        - start_time (str): Logged start time in local ISO format
-        - end_time (str): Logged end time in local ISO format
-        - duration_minutes (int): Total sleep duration in minutes
-        - interval_id (str): Unique identifier for this sleep record
-
-    Raises:
-        ValueError: If neither end_time nor duration_minutes is provided, or if both are provided
-        Exception: When API fails
-    """
-    try:
-        await validate_child_uid(child_uid)
-        api = await get_authenticated_api()
-
-        # Validate inputs
-        if end_time is None and duration_minutes is None:
-            raise ValueError("Either end_time or duration_minutes must be provided")
-        if end_time is not None and duration_minutes is not None:
-            raise ValueError("Provide either end_time or duration_minutes, not both")
-
-        # Get user's timezone from API for proper timestamp conversion
-        user_timezone = api._timezone
-
-        # Convert start time to timestamp (using user's timezone for naive datetimes)
-        start_timestamp = iso_datetime_to_timestamp(start_time, user_timezone)
-
-        # Calculate duration
-        if duration_minutes is not None:
-            duration_sec = duration_minutes * 60
-            end_timestamp = start_timestamp + duration_sec
-        else:
-            end_timestamp = iso_datetime_to_timestamp(end_time, user_timezone)
-            duration_sec = end_timestamp - start_timestamp
-
-            if duration_sec <= 0:
-                raise ValueError("end_time must be after start_time")
-
-        # Access Firestore client directly (following library's internal pattern)
-        client = api._get_firestore_client()
-        sleep_ref = client.collection("sleep").document(child_uid)
-
-        # Generate interval ID
-        interval_id = uuid.uuid4().hex[:16]
-
-        # Create interval document (matching complete_sleep structure)
-        interval_data = {
-            "_id": interval_id,
-            "start": start_timestamp,
-            "duration": duration_sec,
-            "offset": api._get_timezone_offset_minutes(),
-            "end_offset": api._get_timezone_offset_minutes(),
-            "details": {
-                "startSleepCondition": {
-                    "happy": False,
-                    "longTimeToFallAsleep": False,
-                    "10-20_minutes": False,
-                    "upset": False,
-                    "under_10_minutes": False,
-                },
-                "sleepLocations": {
-                    "car": False,
-                    "nursing": False,
-                    "wornOrHeld": False,
-                    "stroller": False,
-                    "coSleep": False,
-                    "nextToCarer": False,
-                    "onOwnInBed": False,
-                    "bottle": False,
-                    "swing": False,
-                },
-                "endSleepCondition": {
-                    "happy": False,
-                    "wokeUpChild": False,
-                    "upset": False,
-                },
-            },
-            "lastUpdated": time.time(),
-        }
-
-        # Write to intervals subcollection
-        sleep_ref.collection("intervals").document(interval_id).set(interval_data)
-
-        # Update prefs.lastSleep (matching complete_sleep behavior)
-        current_time = time.time()
-        last_sleep_data = {
-            "start": start_timestamp,
-            "duration": duration_sec,
-            "offset": api._get_timezone_offset_minutes(),
-        }
-
-        sleep_ref.update({
-            "prefs.lastSleep": last_sleep_data,
-            "prefs.timestamp": {"seconds": current_time},
-            "prefs.local_timestamp": current_time,
-        })
-
-        return {
-            "success": True,
-            "message": f"Sleep logged for child {child_uid}",
-            "start_time": timestamp_to_local_iso(start_timestamp, user_timezone),
-            "end_time": timestamp_to_local_iso(end_timestamp, user_timezone),
-            "duration_minutes": duration_sec // 60,
-            "interval_id": interval_id
-        }
-
-    except ValueError as e:
-        raise
-    except Exception as e:
-        raise Exception(f"Failed to log sleep: {str(e)}")
-
-
-async def start_sleep(child_uid: str) -> Dict[str, Any]:
-    """
-    Begin a sleep tracking session.
-
-    Starts the sleep timer for the specified child. Only one sleep session
-    can be active per child at a time.
-
-    Args:
-        child_uid: The child's unique identifier (from list_children)
-
-    Returns:
-        Dict with keys:
-        - success (bool): True if session started
-        - message (str): Human-readable confirmation
-        - timestamp (str): Session start time in local ISO format
-
-    Raises:
-        ValueError: If child_uid is invalid
-        Exception: If a sleep session is already active for this child, or API fails
-    """
-    try:
-        await validate_child_uid(child_uid)
-        api = await get_authenticated_api()
-
-        # Start sleep timer
-        api.start_sleep(child_uid)
-
-        return {
-            "success": True,
-            "message": f"Sleep tracking started for child {child_uid}",
-            "timestamp": timestamp_to_local_iso(time.time(), api._timezone)
-        }
-
-    except ValueError as e:
-        raise
-    except Exception as e:
-        raise Exception(f"Failed to start sleep session: {str(e)}")
-
-
-async def pause_sleep(child_uid: str) -> Dict[str, Any]:
-    """
-    Pause an active sleep tracking session.
-
-    Args:
-        child_uid: The child's unique identifier (from list_children)
-
-    Returns:
-        Dict with keys:
-        - success (bool): True if session paused
-        - message (str): Human-readable confirmation
-        - timestamp (str): Pause time in local ISO format
-
-    Raises:
-        ValueError: If child_uid is invalid
-        Exception: If no active (running) sleep session exists, or API fails
-
-    Precondition:
-        A sleep session must be active and running (started via start_sleep, not paused).
-    """
-    try:
-        await validate_child_uid(child_uid)
-        api = await get_authenticated_api()
-
-        # Pause sleep timer
-        api.pause_sleep(child_uid)
-
-        return {
-            "success": True,
-            "message": f"Sleep tracking paused for child {child_uid}",
-            "timestamp": timestamp_to_local_iso(time.time(), api._timezone)
-        }
-
-    except ValueError as e:
-        raise
-    except Exception as e:
-        raise Exception(f"Failed to pause sleep session: {str(e)}")
-
-
-async def resume_sleep(child_uid: str) -> Dict[str, Any]:
-    """
-    Resume a paused sleep tracking session.
-
-    Args:
-        child_uid: The child's unique identifier (from list_children)
-
-    Returns:
-        Dict with keys:
-        - success (bool): True if session resumed
-        - message (str): Human-readable confirmation
-        - timestamp (str): Resume time in local ISO format
-
-    Raises:
-        ValueError: If child_uid is invalid
-        Exception: If no paused sleep session exists, or API fails
-
-    Precondition:
-        A sleep session must be paused (via pause_sleep).
-    """
-    try:
-        await validate_child_uid(child_uid)
-        api = await get_authenticated_api()
-
-        # Resume sleep timer
-        api.resume_sleep(child_uid)
-
-        return {
-            "success": True,
-            "message": f"Sleep tracking resumed for child {child_uid}",
-            "timestamp": timestamp_to_local_iso(time.time(), api._timezone)
-        }
-
-    except ValueError as e:
-        raise
-    except Exception as e:
-        raise Exception(f"Failed to resume sleep session: {str(e)}")
-
-
-async def complete_sleep(child_uid: str) -> Dict[str, Any]:
-    """
-    Complete and save a sleep tracking session.
-
-    Ends the active sleep session and saves it to the child's sleep history.
-
-    Args:
-        child_uid: The child's unique identifier (from list_children)
-
-    Returns:
-        Dict with keys:
-        - success (bool): True if session completed and saved
-        - message (str): Human-readable confirmation
-        - timestamp (str): Completion time in local ISO format
-
-    Raises:
-        ValueError: If child_uid is invalid
-        Exception: If no active sleep session exists (running or paused), or API fails
-
-    Precondition:
-        A sleep session must be active (running or paused).
-    """
-    try:
-        await validate_child_uid(child_uid)
-        api = await get_authenticated_api()
-
-        # Complete sleep timer
-        api.complete_sleep(child_uid)
-
-        return {
-            "success": True,
-            "message": f"Sleep tracking completed and saved for child {child_uid}",
-            "timestamp": timestamp_to_local_iso(time.time(), api._timezone)
-        }
-
-    except ValueError as e:
-        raise
-    except Exception as e:
-        raise Exception(f"Failed to complete sleep session: {str(e)}")
-
-
-async def cancel_sleep(child_uid: str) -> Dict[str, Any]:
-    """
-    Cancel and discard a sleep tracking session.
-
-    Ends the active sleep session without saving it. The session data is discarded.
-
-    Args:
-        child_uid: The child's unique identifier (from list_children)
-
-    Returns:
-        Dict with keys:
-        - success (bool): True if session cancelled
-        - message (str): Human-readable confirmation
-        - timestamp (str): Cancellation time in local ISO format
-
-    Raises:
-        ValueError: If child_uid is invalid
-        Exception: If no active sleep session exists (running or paused), or API fails
-
-    Precondition:
-        A sleep session must be active (running or paused).
-    """
-    try:
-        await validate_child_uid(child_uid)
-        api = await get_authenticated_api()
-
-        # Cancel sleep timer
-        api.cancel_sleep(child_uid)
-
-        return {
-            "success": True,
-            "message": f"Sleep tracking cancelled for child {child_uid}",
-            "timestamp": timestamp_to_local_iso(time.time(), api._timezone)
-        }
-
-    except ValueError as e:
-        raise
-    except Exception as e:
-        raise Exception(f"Failed to cancel sleep session: {str(e)}")
+    child_uid = await validate_child_uid(child_uid)
+    api = await get_api()
+
+    start_dt = parse_dt(start_time, default_now=False)
+    if end_time and duration_minutes is not None:
+        raise ValueError("Provide end_time OR duration_minutes, not both")
+    if end_time:
+        end_dt = parse_dt(end_time, default_now=False)
+    elif duration_minutes is not None:
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+    else:
+        raise ValueError("Provide end_time or duration_minutes")
+    if end_dt <= start_dt:
+        raise ValueError("end_time must be after start_time")
+
+    await api.log_sleep(child_uid, start_time=start_dt, end_time=end_dt)
+    total = int((end_dt - start_dt).total_seconds() / 60)
+    return {
+        "success": True,
+        "message": f"Logged {total} min sleep",
+        "start_time": to_local_iso(start_dt),
+        "end_time": to_local_iso(end_dt),
+        "duration_minutes": total,
+    }
+
+
+async def start_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+    """Start a sleep timer."""
+    child_uid = await validate_child_uid(child_uid)
+    api = await get_api()
+    await api.start_sleep(child_uid)
+    return {"success": True, "message": "Started sleep timer"}
+
+
+async def pause_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+    child_uid = await validate_child_uid(child_uid)
+    api = await get_api()
+    await api.pause_sleep(child_uid)
+    return {"success": True, "message": "Paused sleep timer"}
+
+
+async def resume_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+    child_uid = await validate_child_uid(child_uid)
+    api = await get_api()
+    await api.resume_sleep(child_uid)
+    return {"success": True, "message": "Resumed sleep timer"}
+
+
+async def complete_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+    """Complete and save the active sleep timer."""
+    child_uid = await validate_child_uid(child_uid)
+    api = await get_api()
+    await api.complete_sleep(child_uid)
+    return {"success": True, "message": "Completed sleep"}
+
+
+async def cancel_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+    child_uid = await validate_child_uid(child_uid)
+    api = await get_api()
+    await api.cancel_sleep(child_uid)
+    return {"success": True, "message": "Cancelled sleep timer"}
 
 
 async def get_sleep_history(
-    child_uid: str,
+    child_uid: Optional[str] = None,
+    *,
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """
-    Get sleep history for a child.
-
-    Args:
-        child_uid: The child's unique identifier (from list_children)
-        start_date: Start date in ISO format (YYYY-MM-DD), defaults to 7 days ago
-        end_date: End date in ISO format (YYYY-MM-DD), defaults to today
-
-    Returns:
-        List of dicts, each containing:
-        - start_time (str): Sleep start time in local ISO format
-        - end_time (str | None): Sleep end time in local ISO format, None if ongoing
-        - duration_minutes (int): Total sleep duration in minutes
-
-    Raises:
-        Exception: When API fails
-    """
-    try:
-        await validate_child_uid(child_uid)
-        api = await get_authenticated_api()
-
-        # Get user's timezone for proper date interpretation
-        user_timezone = api._timezone
-
-        # Default to last 7 days if no dates provided
-        if not start_date:
-            start_timestamp = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp())
-        else:
-            start_timestamp = iso_to_timestamp(start_date, user_timezone)
-
-        if not end_date:
-            end_timestamp = int(datetime.now(timezone.utc).timestamp())
-        else:
-            end_timestamp = iso_to_timestamp(end_date, user_timezone)
-
-        # Use get_sleep_intervals which returns list of dicts with 'start', 'end', 'duration'
-        intervals = api.get_sleep_intervals(child_uid, start_timestamp, end_timestamp)
-
-        result = []
-        for interval in intervals:
-            # Convert timestamps to ISO format in user's timezone
-            start_time = timestamp_to_local_iso(interval["start"], user_timezone)
-            end_time = timestamp_to_local_iso(interval["end"], user_timezone) if "end" in interval else None
-
-            result.append({
-                "start_time": start_time,
-                "end_time": end_time,
-                "duration_minutes": interval.get("duration", 0) // 60,  # Convert backend seconds to user minutes
-            })
-
-        return result
-
-    except Exception as e:
-        raise Exception(f"Failed to get sleep history: {str(e)}")
+    end_date: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """Fetch sleep history."""
+    child_uid = await validate_child_uid(child_uid)
+    api = await get_api()
+    end_dt = parse_dt(end_date)
+    start_dt = parse_dt(start_date) if start_date else (end_dt - timedelta(days=7))
+    intervals = await api.list_sleep_intervals(child_uid, start_dt, end_dt)
+    out: list[dict[str, Any]] = []
+    for iv in intervals:
+        start = getattr(iv, "start", None)
+        duration = getattr(iv, "duration", 0) or 0
+        end = getattr(iv, "end", None)
+        out.append(
+            {
+                "start_time": to_local_iso(start) if start is not None else None,
+                "end_time": to_local_iso(end) if end is not None else None,
+                "duration_minutes": int(duration // 60) if duration else 0,
+            }
+        )
+    return out
 
 
 def register_sleep_tools(mcp):
-    """Register sleep tracking tools with FastMCP instance."""
     mcp.tool()(log_sleep)
     mcp.tool()(start_sleep)
     mcp.tool()(pause_sleep)

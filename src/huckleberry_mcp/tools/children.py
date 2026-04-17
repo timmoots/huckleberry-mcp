@@ -1,102 +1,77 @@
-"""Child management tools for Huckleberry MCP server."""
+"""Child management tools."""
 
-from typing import Any, Dict, List, Optional
-from ..auth import get_authenticated_api
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from ..auth import get_api
+from ..utils import resolve_child_uid
 
 
-async def list_children() -> List[Dict[str, Any]]:
+async def list_children() -> list[dict[str, Any]]:
+    """List all child profiles on the Huckleberry account.
+
+    Use this only if HUCKLEBERRY_DEFAULT_CHILD_UID is unset or when
+    disambiguating between multiple children. Every other tool accepts
+    an optional `child_uid` that defaults to the env var.
     """
-    List all child profiles registered in the Huckleberry account.
-
-    Use this tool first to get child_uid values needed by other tools.
-
-    Returns:
-        List of dicts, each containing:
-        - uid (str): Unique identifier for the child, required by all other tools
-        - name (str): Child's display name
-        - birth_date (str): Child's birth date in ISO format
-
-    Raises:
-        Exception: When API authentication fails or request errors
-    """
-    try:
-        api = await get_authenticated_api()
-        children = api.get_children()
-
-        result = []
-        for child in children:
-            result.append({
-                "uid": child.get("uid"),
-                "name": child.get("name"),
-                "birth_date": child.get("birthDate"),
-            })
-
-        return result
-
-    except Exception as e:
-        raise Exception(f"Failed to list children: {str(e)}")
+    api = await get_api()
+    user = await api.get_user()
+    if user is None:
+        return []
+    out: list[dict[str, Any]] = []
+    for ref in user.childList or []:
+        cid = getattr(ref, "cid", None)
+        if not cid:
+            continue
+        name = getattr(ref, "nickname", None)
+        birth_date = None
+        try:
+            child = await api.get_child(cid)
+            if child:
+                name = name or getattr(child, "childsName", None)
+                bd = getattr(child, "birthdate", None)
+                if bd is not None:
+                    birth_date = str(bd)
+        except Exception:
+            # non-fatal: still return what we have
+            pass
+        out.append({"uid": cid, "name": name, "birth_date": birth_date})
+    return out
 
 
-async def get_child_name(child_uid: str) -> Optional[str]:
-    """
-    Get a child's name from their UID.
+async def get_child_name(child_uid: Optional[str] = None) -> Optional[str]:
+    """Get a child's display name.
 
     Args:
-        child_uid: The child's unique identifier (from list_children)
-
-    Returns:
-        The child's name as a string, or None if child_uid not found
-
-    Raises:
-        Exception: When API authentication fails or request errors
+        child_uid: Optional; defaults to HUCKLEBERRY_DEFAULT_CHILD_UID.
     """
-    try:
-        api = await get_authenticated_api()
-        children = api.get_children()
-
-        for child in children:
-            if child.get("uid") == child_uid:
-                return child.get("name")
-
+    child_uid = resolve_child_uid(child_uid)
+    api = await get_api()
+    user = await api.get_user()
+    if user is None:
         return None
+    for ref in user.childList or []:
+        if getattr(ref, "cid", None) == child_uid:
+            return getattr(ref, "nickname", None)
+    return None
 
-    except Exception as e:
-        raise Exception(f"Failed to get child name: {str(e)}")
 
-
-async def validate_child_uid(child_uid: str) -> bool:
-    """
-    Validate that a child_uid exists.
-
-    Args:
-        child_uid: The child's unique identifier
-
-    Returns:
-        True if valid, raises exception otherwise
-    """
-    try:
-        api = await get_authenticated_api()
-        children = api.get_children()
-
-        valid_uids = [child.get("uid") for child in children]
-
-        if child_uid not in valid_uids:
-            raise ValueError(
-                f"Invalid child_uid '{child_uid}'. "
-                f"Valid UIDs: {', '.join(valid_uids)}"
-            )
-
-        return True
-
-    except ValueError:
-        raise
-    except Exception as e:
-        raise Exception(f"Failed to validate child_uid: {str(e)}")
+async def validate_child_uid(child_uid: Optional[str] = None) -> str:
+    """Resolve and validate a child_uid. Returns the concrete uid."""
+    child_uid = resolve_child_uid(child_uid)
+    api = await get_api()
+    user = await api.get_user()
+    if user is None:
+        raise RuntimeError("Could not load Huckleberry user profile")
+    valid = [getattr(r, "cid", None) for r in user.childList or []]
+    if child_uid not in valid:
+        raise ValueError(
+            f"Invalid child_uid '{child_uid}'. Valid: {', '.join(str(v) for v in valid)}"
+        )
+    return child_uid
 
 
 def register_children_tools(mcp):
-    """Register child management tools with FastMCP instance."""
     mcp.tool()(list_children)
     mcp.tool()(get_child_name)
-
-

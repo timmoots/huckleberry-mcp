@@ -1,67 +1,72 @@
-"""Shared utility functions for Huckleberry MCP server."""
+"""Shared utility functions for Huckleberry MCP server.
 
+Timezone contract: naive ISO datetimes are interpreted as
+America/New_York (EST/EDT) by default. Override with HUCKLEBERRY_TIMEZONE.
+ISO strings with an explicit offset (e.g. "...+00:00" or "...Z") are
+honored as-is.
+"""
+
+from __future__ import annotations
+
+import os
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 
-def iso_to_timestamp(iso_date: str, user_timezone=None) -> int:
-    """Convert ISO date string (YYYY-MM-DD) to Unix timestamp.
+def default_timezone() -> ZoneInfo:
+    return ZoneInfo(os.getenv("HUCKLEBERRY_TIMEZONE", "America/New_York"))
 
-    Args:
-        iso_date: Date string in YYYY-MM-DD format
-        user_timezone: ZoneInfo object. If provided, interprets date as midnight in this timezone.
-                      Otherwise defaults to UTC.
 
-    Returns:
-        Unix timestamp in seconds
+def resolve_child_uid(passed: str | None) -> str:
+    """Return a concrete child_uid or raise.
+
+    Falls back to HUCKLEBERRY_DEFAULT_CHILD_UID. Raises ValueError if
+    neither source is available so the model can call list_children.
     """
-    dt = datetime.fromisoformat(iso_date)
+    if passed:
+        return passed
+    default = os.getenv("HUCKLEBERRY_DEFAULT_CHILD_UID")
+    if default:
+        return default
+    raise ValueError(
+        "child_uid not provided and HUCKLEBERRY_DEFAULT_CHILD_UID is not set. "
+        "Call list_children to get a uid, or configure the default env var."
+    )
 
-    # Apply timezone (user's local or UTC)
-    if user_timezone is not None:
-        dt = dt.replace(tzinfo=user_timezone)
+
+def parse_dt(value: str | datetime | None, *, default_now: bool = True) -> datetime:
+    """Parse an ISO datetime (or pass through datetime).
+
+    - None + default_now=True -> current UTC time
+    - Naive datetime -> localized to default timezone
+    - String with 'Z' / offset -> honored as-is
+    - Naive ISO string -> interpreted in default timezone
+    """
+    if value is None:
+        if not default_now:
+            raise ValueError("datetime is required")
+        return datetime.now(timezone.utc)
+    if isinstance(value, datetime):
+        dt = value
     else:
-        dt = dt.replace(tzinfo=timezone.utc)
-
-    return int(dt.timestamp())
-
-
-def iso_datetime_to_timestamp(iso_datetime: str, user_timezone=None) -> int:
-    """Convert ISO datetime string to Unix timestamp (seconds).
-
-    Args:
-        iso_datetime: ISO datetime string (e.g., "2026-01-25T08:15:00" or "2026-01-25T08:15:00Z")
-        user_timezone: ZoneInfo object representing user's timezone. If provided and iso_datetime
-                       has no timezone, interprets the datetime as being in this timezone.
-
-    Returns:
-        Unix timestamp in seconds
-    """
-    dt = datetime.fromisoformat(iso_datetime.replace('Z', '+00:00'))
-
-    # If no timezone specified in the input string, use user's configured timezone
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        if user_timezone is not None:
-            # Interpret as user's local time
-            dt = dt.replace(tzinfo=user_timezone)
-        else:
-            # Fallback to UTC if no user timezone provided
-            dt = dt.replace(tzinfo=timezone.utc)
-
-    return int(dt.timestamp())
+        dt = dt.replace(tzinfo=default_timezone())
+    return dt
 
 
-def timestamp_to_local_iso(timestamp: float, user_timezone=None) -> str:
-    """Convert Unix timestamp to ISO string in user's local timezone.
+def to_local_iso(dt: datetime | float) -> str:
+    """Format a datetime (or unix seconds) as ISO in the default timezone."""
+    if isinstance(dt, (int, float)):
+        dt = datetime.fromtimestamp(float(dt), tz=timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(default_timezone()).isoformat()
 
-    Args:
-        timestamp: Unix timestamp in seconds
-        user_timezone: ZoneInfo object representing user's timezone. If provided,
-                       the returned ISO string will be in this timezone.
 
-    Returns:
-        ISO datetime string in user's local timezone (or UTC if no timezone provided)
-    """
-    dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-    if user_timezone:
-        dt = dt.astimezone(user_timezone)
-    return dt.isoformat()
+def today_range() -> tuple[datetime, datetime]:
+    """Return (start_of_today, now) in the user's timezone."""
+    tz = default_timezone()
+    now_local = datetime.now(tz)
+    start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, now_local
