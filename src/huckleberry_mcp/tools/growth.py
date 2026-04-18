@@ -82,6 +82,8 @@ async def get_growth_history(
     end_dt = parse_dt(end_date)
     start_dt = parse_dt(start_date) if start_date else (end_dt - timedelta(days=30))
     entries = await api.list_health_entries(child_uid, start_dt, end_dt)
+    # Most recent first — item 0 is "the last measurement".
+    entries = sorted(entries, key=lambda e: getattr(e, "start", 0), reverse=True)
     return [
         {
             "timestamp": to_local_iso(entry.start) if hasattr(entry, "start") else None,

@@ -98,6 +98,8 @@ async def get_sleep_history(
     end_dt = parse_dt(end_date)
     start_dt = parse_dt(start_date) if start_date else (end_dt - timedelta(days=7))
     intervals = await api.list_sleep_intervals(child_uid, start_dt, end_dt)
+    # Most recent first — item 0 is "the last sleep".
+    intervals = sorted(intervals, key=lambda iv: getattr(iv, "start", 0), reverse=True)
     out: list[dict[str, Any]] = []
     for iv in intervals:
         start = getattr(iv, "start", None)
