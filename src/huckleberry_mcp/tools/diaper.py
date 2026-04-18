@@ -22,7 +22,7 @@ _VALID_CONSISTENCIES = {"solid", "loose", "runny", "mucousy", "hard", "pebbles",
 async def log_diaper(
     child_uid: Optional[str] = None,
     *,
-    mode: str = "both",
+    mode: str,
     pee_amount: Optional[str] = None,
     poo_amount: Optional[str] = None,
     color: Optional[str] = None,
@@ -33,17 +33,29 @@ async def log_diaper(
 ) -> dict[str, Any]:
     """Log a diaper change.
 
+    BEFORE CALLING THIS TOOL:
+    - `mode` is required. Never assume it. Infer from the user's words when
+      they're clear ("wet" -> "pee"; "poopy"/"dirty" -> "poo"; "soiled" or
+      "#1 and #2" -> "both"; "clean"/"dry" -> "dry"). If the user just
+      says "diaper" with no qualifier, ASK them: pee, poo, both, or dry?
+    - When `mode` is "poo" or "both", ALWAYS ask the user to confirm
+      poo_amount, color, and consistency before calling. These are
+      diagnostically useful and the user expects the prompt. It is better
+      to ask and log once than to log twice.
+    - When `mode` is "pee" and the user volunteered amount, include it;
+      don't ask unprompted for pee_amount — it adds friction without value.
+
     Args:
         child_uid: Optional; defaults to HUCKLEBERRY_DEFAULT_CHILD_UID.
-        mode: "pee", "poo", "both", or "dry".
-        pee_amount / poo_amount: "little", "medium", or "big" (optional).
-        color: "yellow", "brown", "black", "green", "red", or "gray" (optional).
+        mode: REQUIRED. "pee", "poo", "both", or "dry".
+        pee_amount / poo_amount: "little", "medium", or "big".
+        color: "yellow", "brown", "black", "green", "red", or "gray".
         consistency: "solid", "loose", "runny", "mucousy", "hard", "pebbles",
-                     or "diarrhea" (optional).
+                     or "diarrhea".
         diaper_rash: True if rash present.
         notes: Free text notes.
         timestamp: Optional ISO datetime for retroactive logging. Naive input
-                   is interpreted as America/New_York. Defaults to now (UTC).
+                   is interpreted as America/New_York. Defaults to now.
     """
     if mode not in _VALID_MODES:
         raise ValueError(f"Invalid mode '{mode}'. Must be one of: {sorted(_VALID_MODES)}")
