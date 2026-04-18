@@ -9,7 +9,7 @@ ENV PIP_NO_CACHE_DIR=1 \
 RUN pip install --no-cache-dir uv
 
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src ./src
