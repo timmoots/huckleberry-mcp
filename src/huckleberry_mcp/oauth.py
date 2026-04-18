@@ -245,7 +245,15 @@ def build_consent_routes(provider: HuckleberryOAuthProvider):
         return HTMLResponse(_consent_page(session_id))
 
     async def post_consent(request: Request):
-        client_ip = request.client.host if request.client else "unknown"
+        # Behind a reverse proxy (Fly.io), request.client.host is the edge IP
+        # — same for every real client — so rate-limiting on it is effectively
+        # global. Prefer Fly-Client-IP, fall back to X-Forwarded-For's leftmost
+        # entry, fall back to the socket peer only for direct local dev.
+        client_ip = (
+            request.headers.get("fly-client-ip")
+            or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+            or (request.client.host if request.client else "unknown")
+        )
         if not provider._rate_limit(client_ip):
             return HTMLResponse(
                 "<h1>Too many attempts</h1><p>Wait a minute and try again.</p>",
