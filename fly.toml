@@ -7,6 +7,11 @@ primary_region = "iad"
   MCP_TRANSPORT = "streamable-http"
   PORT = "8080"
   HUCKLEBERRY_TIMEZONE = "America/New_York"
+  OAUTH_STATE_PATH = "/data/oauth_state.pkl"
+
+[[mounts]]
+  source = "huckleberry_data"
+  destination = "/data"
 
 [http_service]
   internal_port = 8080

@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import collections
 import os
+import pickle
 import secrets
+import sys
 import time
 from html import escape
+from pathlib import Path
 
 from mcp.server.auth.provider import (
     AccessToken,
@@ -68,6 +71,65 @@ class HuckleberryOAuthProvider(InMemoryOAuthProvider):
                 "OAUTH_ADMIN_PASSWORD must be set for remote transport"
             )
         self._admin_password = admin_password
+        state_path = os.getenv("OAUTH_STATE_PATH")
+        self._state_path: Path | None = Path(state_path) if state_path else None
+        self._load_state()
+
+    # ---- persistence ----
+    # pending_consent + rate-limit hits are intentionally not persisted —
+    # they're short-lived and safer to drop on restart.
+
+    def _save_state(self) -> None:
+        if self._state_path is None:
+            return
+        state = {
+            "clients": self.clients,
+            "auth_codes": self.auth_codes,
+            "access_tokens": self.access_tokens,
+            "refresh_tokens": self.refresh_tokens,
+            "a2r": self._access_to_refresh_map,
+            "r2a": self._refresh_to_access_map,
+        }
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
+            with tmp.open("wb") as f:
+                pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
+            os.replace(tmp, self._state_path)
+        except Exception as e:
+            print(f"OAuth state save failed: {e}", file=sys.stderr)
+
+    def _load_state(self) -> None:
+        if self._state_path is None or not self._state_path.exists():
+            return
+        try:
+            with self._state_path.open("rb") as f:
+                state = pickle.load(f)
+            self.clients = state.get("clients", {})
+            self.auth_codes = state.get("auth_codes", {})
+            self.access_tokens = state.get("access_tokens", {})
+            self.refresh_tokens = state.get("refresh_tokens", {})
+            self._access_to_refresh_map = state.get("a2r", {})
+            self._refresh_to_access_map = state.get("r2a", {})
+            print(
+                f"OAuth state loaded from {self._state_path}: "
+                f"{len(self.clients)} clients, {len(self.refresh_tokens)} refresh tokens",
+                file=sys.stderr,
+            )
+        except Exception as e:
+            print(f"OAuth state load failed (starting empty): {e}", file=sys.stderr)
+
+    # ---- overrides that mutate persistent state ----
+
+    async def register_client(
+        self, client_info: OAuthClientInformationFull
+    ) -> None:
+        await super().register_client(client_info)
+        self._save_state()
+
+    async def revoke_token(self, token) -> None:  # type: ignore[override]
+        await super().revoke_token(token)
+        self._save_state()
 
     async def authorize(
         self,
@@ -108,6 +170,7 @@ class HuckleberryOAuthProvider(InMemoryOAuthProvider):
         self._access_to_refresh_map[access_token_value] = refresh_token_value
         self._refresh_to_access_map[refresh_token_value] = access_token_value
 
+        self._save_state()
         return OAuthToken(
             access_token=access_token_value,
             token_type="Bearer",
@@ -148,6 +211,7 @@ class HuckleberryOAuthProvider(InMemoryOAuthProvider):
         self._access_to_refresh_map[new_access] = new_refresh
         self._refresh_to_access_map[new_refresh] = new_access
 
+        self._save_state()
         return OAuthToken(
             access_token=new_access,
             token_type="Bearer",
@@ -187,6 +251,7 @@ class HuckleberryOAuthProvider(InMemoryOAuthProvider):
             expires_at=time.time() + AUTH_CODE_TTL_SECONDS,
             code_challenge=params.code_challenge,
         )
+        self._save_state()
         return construct_redirect_uri(
             str(params.redirect_uri),
             code=auth_code_value,
