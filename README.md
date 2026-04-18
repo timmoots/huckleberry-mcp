@@ -55,7 +55,7 @@ This MCP turns any of those into a sentence in Claude:
   switched by `MCP_TRANSPORT`.
 - **Auth:** FastMCP's native OAuth 2.1 Authorization Server with Dynamic
   Client Registration. Claude.ai handles the OAuth dance; you enter an admin
-  password once per week on a minimal consent form served by the MCP itself.
+  password once every 30 days on a minimal consent form served by the MCP itself.
   No Cloudflare Access, no WorkOS, no Clerk.
 - **API:** `huckleberry-api>=0.4.0,<0.5.0` — fully async, uses the official
   Google Cloud Firestore gRPC SDK (not a reverse-engineered REST shim).
@@ -119,7 +119,7 @@ curl https://huckleberry-mcp.fly.dev/health
 4. You're redirected to `/consent` and enter `OAUTH_ADMIN_PASSWORD`.
 5. Connector syncs to Claude mobile/desktop automatically.
 
-Re-consent is required weekly, or after any Fly deploy (in-memory token store).
+Re-consent is required every 30 days. OAuth state is persisted to a Fly volume, so deploys and machine restarts don't invalidate the session.
 
 ---
 

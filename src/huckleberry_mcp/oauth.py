@@ -40,7 +40,7 @@ from fastmcp.server.auth.auth import ClientRegistrationOptions
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 
 ACCESS_TOKEN_TTL_SECONDS = 60 * 60              # 1 hour
-REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60    # 7 days — matches user's weekly sign-in max
+REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60   # 30 days — user-configured re-consent cadence
 CONSENT_SESSION_TTL_SECONDS = 5 * 60            # 5 minutes to complete the consent flow
 AUTH_CODE_TTL_SECONDS = 5 * 60                  # 5 minutes
 CONSENT_RATE_LIMIT_WINDOW = 60                  # seconds

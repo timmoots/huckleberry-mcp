@@ -44,7 +44,7 @@ Options considered:
 - **FastMCP native OAuth AS (this repo).** Single codebase. No third-party
   identity provider. Subclasses FastMCP's `InMemoryOAuthProvider`, overrides
   `authorize` to redirect through a minimal consent form, issues
-  1-hour access / 7-day refresh tokens.
+  1-hour access / 30-day refresh tokens.
 
 Consent form is the one UI in the whole system — one password input, 30 lines
 of HTML served by the same FastMCP app. Admin password compared with

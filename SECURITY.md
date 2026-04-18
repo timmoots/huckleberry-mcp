@@ -7,11 +7,11 @@ This server is single-user by design. The threat model assumes one operator
 
 1. **Claude.ai ↔ MCP server.** OAuth 2.1 with Dynamic Client Registration
    and PKCE. FastMCP's built-in Authorization Server issues 1-hour access
-   tokens and 7-day refresh tokens after the operator enters a consent
+   tokens and 30-day refresh tokens after the operator enters a consent
    password.
-2. **Origin (`/mcp`).** Every request is validated against an in-memory
-   access-token store. A restart wipes all tokens — the operator re-consents
-   on the next tool call. Acceptable given weekly consent is the norm.
+2. **Origin (`/mcp`).** Every request is validated against the OAuth
+   token store, which is pickled to a mounted Fly volume after every
+   mutation. Restarts survive without the operator re-consenting.
 3. **Huckleberry (Firebase).** Email/password → Firebase ID token, refreshed
    internally by `py-huckleberry-api` (~hourly). If refresh fails, the server
    re-authenticates transparently from env vars.
