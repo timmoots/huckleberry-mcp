@@ -28,6 +28,9 @@ jobs:
       - name: Ruff lint
         run: uv run ruff check src
 
+      - name: Ruff format check
+        run: uv run ruff format --check src
+
       - name: Import smoke
         env:
           MCP_TRANSPORT: stdio

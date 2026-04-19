@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from ..auth import get_api
 from ..utils import parse_dt, to_local_iso
@@ -11,11 +11,11 @@ from .children import validate_child_uid
 
 
 async def log_sleep(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
     start_time: str,
-    end_time: Optional[str] = None,
-    duration_minutes: Optional[int] = None,
+    end_time: str | None = None,
+    duration_minutes: int | None = None,
 ) -> dict[str, Any]:
     """Retroactively log a completed sleep session.
 
@@ -49,7 +49,7 @@ async def log_sleep(
     }
 
 
-async def start_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def start_sleep(child_uid: str | None = None) -> dict[str, Any]:
     """Start a sleep timer."""
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
@@ -57,21 +57,21 @@ async def start_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
     return {"success": True, "message": "Started sleep timer"}
 
 
-async def pause_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def pause_sleep(child_uid: str | None = None) -> dict[str, Any]:
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
     await api.pause_sleep(child_uid)
     return {"success": True, "message": "Paused sleep timer"}
 
 
-async def resume_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def resume_sleep(child_uid: str | None = None) -> dict[str, Any]:
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
     await api.resume_sleep(child_uid)
     return {"success": True, "message": "Resumed sleep timer"}
 
 
-async def complete_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def complete_sleep(child_uid: str | None = None) -> dict[str, Any]:
     """Complete and save the active sleep timer."""
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
@@ -79,7 +79,7 @@ async def complete_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
     return {"success": True, "message": "Completed sleep"}
 
 
-async def cancel_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def cancel_sleep(child_uid: str | None = None) -> dict[str, Any]:
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
     await api.cancel_sleep(child_uid)
@@ -87,10 +87,10 @@ async def cancel_sleep(child_uid: Optional[str] = None) -> dict[str, Any]:
 
 
 async def get_sleep_history(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch sleep history."""
     child_uid = await validate_child_uid(child_uid)

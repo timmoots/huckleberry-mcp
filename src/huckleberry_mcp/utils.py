@@ -9,7 +9,7 @@ honored as-is.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 
@@ -45,7 +45,7 @@ def parse_dt(value: str | datetime | None, *, default_now: bool = True) -> datet
     if value is None:
         if not default_now:
             raise ValueError("datetime is required")
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     if isinstance(value, datetime):
         dt = value
     else:
@@ -58,9 +58,9 @@ def parse_dt(value: str | datetime | None, *, default_now: bool = True) -> datet
 def to_local_iso(dt: datetime | float) -> str:
     """Format a datetime (or unix seconds) as ISO in the default timezone."""
     if isinstance(dt, (int, float)):
-        dt = datetime.fromtimestamp(float(dt), tz=timezone.utc)
+        dt = datetime.fromtimestamp(float(dt), tz=UTC)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(default_timezone()).isoformat()
 
 

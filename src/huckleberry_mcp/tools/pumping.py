@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from ..auth import get_api
 from ..utils import parse_dt, to_local_iso
@@ -11,15 +11,15 @@ from .children import validate_child_uid
 
 
 async def log_pumping(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
-    total_amount: Optional[float] = None,
-    left_amount: Optional[float] = None,
-    right_amount: Optional[float] = None,
-    duration_minutes: Optional[float] = None,
+    total_amount: float | None = None,
+    left_amount: float | None = None,
+    right_amount: float | None = None,
+    duration_minutes: float | None = None,
     units: str = "ml",
-    notes: Optional[str] = None,
-    timestamp: Optional[str] = None,
+    notes: str | None = None,
+    timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Log a pumping session.
 
@@ -36,9 +36,7 @@ async def log_pumping(
     api = await get_api()
     start_time = parse_dt(timestamp)
 
-    duration_seconds = (
-        float(duration_minutes) * 60 if duration_minutes is not None else None
-    )
+    duration_seconds = float(duration_minutes) * 60 if duration_minutes is not None else None
 
     await api.log_pump(
         child_uid,
@@ -65,10 +63,10 @@ async def log_pumping(
 
 
 async def get_pumping_history(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch pumping history (default last 7 days)."""
     child_uid = await validate_child_uid(child_uid)

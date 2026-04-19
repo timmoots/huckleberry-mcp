@@ -7,7 +7,7 @@ America/New_York (EST/EDT) unless HUCKLEBERRY_TIMEZONE overrides.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from ..auth import get_api
 from ..utils import parse_dt, to_local_iso
@@ -20,16 +20,16 @@ _VALID_CONSISTENCIES = {"solid", "loose", "runny", "mucousy", "hard", "pebbles",
 
 
 async def log_diaper(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
     mode: str,
-    pee_amount: Optional[str] = None,
-    poo_amount: Optional[str] = None,
-    color: Optional[str] = None,
-    consistency: Optional[str] = None,
+    pee_amount: str | None = None,
+    poo_amount: str | None = None,
+    color: str | None = None,
+    consistency: str | None = None,
     diaper_rash: bool = False,
-    notes: Optional[str] = None,
-    timestamp: Optional[str] = None,
+    notes: str | None = None,
+    timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Log a diaper change.
 
@@ -95,10 +95,10 @@ async def log_diaper(
 
 
 async def get_diaper_history(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch diaper history.
 

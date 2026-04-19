@@ -9,7 +9,6 @@ handled by `api.ensure_session()` which we call before every operation.
 import asyncio
 import os
 import sys
-from typing import Optional
 
 import aiohttp
 from huckleberry_api import HuckleberryAPI
@@ -19,8 +18,8 @@ class HuckleberryAuthError(Exception):
     """Raised when authentication fails."""
 
 
-_session: Optional[aiohttp.ClientSession] = None
-_api: Optional[HuckleberryAPI] = None
+_session: aiohttp.ClientSession | None = None
+_api: HuckleberryAPI | None = None
 _lock = asyncio.Lock()
 
 

@@ -3,12 +3,14 @@
 Single-user design. Claude.ai completes Dynamic Client Registration (DCR), then
 redirects the user's browser to /consent, where the user enters a single
 admin password (OAUTH_ADMIN_PASSWORD env var). On success we issue a 1-hour
-access token and a 7-day refresh token. Restarts wipe state — the user
-re-consents once per week in the normal flow, and after any deploy.
+access token and a 30-day refresh token. State is pickled to the volume at
+OAUTH_STATE_PATH so restarts don't force re-consent; the user re-consents on
+the 30-day cadence.
 
 Security notes:
-- Token stores are in-memory. A VM compromise exposes tokens valid for ≤1 hour.
-- The consent form is rate-limited per-IP to resist online brute force.
+- Tokens pickled to the volume at OAUTH_STATE_PATH. A VM compromise exposes
+  tokens valid for up to their refresh-token TTL.
+- The consent form is rate-limited per real client IP (Fly-Client-IP header).
 - The admin password is compared with `secrets.compare_digest` — no timing leak.
 - Auth codes are PKCE-bound; Claude sends `code_challenge`/`code_verifier`.
 """
@@ -24,6 +26,8 @@ import time
 from html import escape
 from pathlib import Path
 
+from fastmcp.server.auth.auth import ClientRegistrationOptions
+from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -36,15 +40,12 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
-from fastmcp.server.auth.auth import ClientRegistrationOptions
-from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
-
-ACCESS_TOKEN_TTL_SECONDS = 60 * 60              # 1 hour
-REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60   # 30 days — user-configured re-consent cadence
-CONSENT_SESSION_TTL_SECONDS = 5 * 60            # 5 minutes to complete the consent flow
-AUTH_CODE_TTL_SECONDS = 5 * 60                  # 5 minutes
-CONSENT_RATE_LIMIT_WINDOW = 60                  # seconds
-CONSENT_RATE_LIMIT_MAX = 10                     # POSTs per IP per window
+ACCESS_TOKEN_TTL_SECONDS = 60 * 60  # 1 hour
+REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days — user-configured re-consent cadence
+CONSENT_SESSION_TTL_SECONDS = 5 * 60  # 5 minutes to complete the consent flow
+AUTH_CODE_TTL_SECONDS = 5 * 60  # 5 minutes
+CONSENT_RATE_LIMIT_WINDOW = 60  # seconds
+CONSENT_RATE_LIMIT_MAX = 10  # POSTs per IP per window
 
 
 class HuckleberryOAuthProvider(InMemoryOAuthProvider):
@@ -67,9 +68,7 @@ class HuckleberryOAuthProvider(InMemoryOAuthProvider):
         )
         admin_password = os.getenv("OAUTH_ADMIN_PASSWORD")
         if not admin_password:
-            raise RuntimeError(
-                "OAUTH_ADMIN_PASSWORD must be set for remote transport"
-            )
+            raise RuntimeError("OAUTH_ADMIN_PASSWORD must be set for remote transport")
         self._admin_password = admin_password
         state_path = os.getenv("OAUTH_STATE_PATH")
         self._state_path: Path | None = Path(state_path) if state_path else None
@@ -121,9 +120,7 @@ class HuckleberryOAuthProvider(InMemoryOAuthProvider):
 
     # ---- overrides that mutate persistent state ----
 
-    async def register_client(
-        self, client_info: OAuthClientInformationFull
-    ) -> None:
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         await super().register_client(client_info)
         self._save_state()
 
@@ -147,9 +144,7 @@ class HuckleberryOAuthProvider(InMemoryOAuthProvider):
         authorization_code: AuthorizationCode,
     ) -> OAuthToken:
         if authorization_code.code not in self.auth_codes:
-            raise TokenError(
-                "invalid_grant", "Authorization code not found or already used."
-            )
+            raise TokenError("invalid_grant", "Authorization code not found or already used.")
         del self.auth_codes[authorization_code.code]
 
         access_token_value = f"hb_at_{secrets.token_urlsafe(32)}"
@@ -260,9 +255,7 @@ class HuckleberryOAuthProvider(InMemoryOAuthProvider):
 
 
 def _consent_page(session_id: str, error: str | None = None) -> str:
-    err_html = (
-        f'<p class="err">{escape(error)}</p>' if error else ""
-    )
+    err_html = f'<p class="err">{escape(error)}</p>' if error else ""
     return f"""<!doctype html>
 <html><head><title>Huckleberry MCP — Authorize</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -331,16 +324,22 @@ def build_consent_routes(provider: HuckleberryOAuthProvider):
 
         pending = provider.pending_consent.pop(session_id, None)
         if pending is None:
-            return HTMLResponse(_consent_page(session_id, error="Session expired."), status_code=400)
+            return HTMLResponse(
+                _consent_page(session_id, error="Session expired."), status_code=400
+            )
 
         client, params, expires_at = pending
         if time.time() > expires_at:
-            return HTMLResponse(_consent_page(session_id, error="Session expired."), status_code=400)
+            return HTMLResponse(
+                _consent_page(session_id, error="Session expired."), status_code=400
+            )
 
         if not secrets.compare_digest(password, provider._admin_password):
             # Put the pending session back so the user can retry without re-initiating
             provider.pending_consent[session_id] = (client, params, expires_at)
-            return HTMLResponse(_consent_page(session_id, error="Incorrect password."), status_code=401)
+            return HTMLResponse(
+                _consent_page(session_id, error="Incorrect password."), status_code=401
+            )
 
         redirect = provider._issue_code(client, params)
         return RedirectResponse(redirect, status_code=302)

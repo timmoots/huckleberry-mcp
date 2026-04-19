@@ -28,3 +28,30 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src"]
+extend-exclude = [".venv", "dist", "build"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific
+    "ASYNC",  # async pitfalls (matters here — async API + OAuth)
+]
+ignore = [
+    "E501",   # line too long — formatter handles it
+    "B008",   # function call in default arg — FastMCP decorator patterns
+    "SIM108", # ternary over if/else — readability over terseness
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/huckleberry_mcp/oauth.py" = ["E402"]  # module-level imports after __future__

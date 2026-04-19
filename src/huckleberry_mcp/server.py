@@ -37,9 +37,7 @@ def _build_mcp() -> FastMCP:
         # Import only when needed so stdio dev doesn't require OAUTH_ADMIN_PASSWORD
         from huckleberry_mcp.oauth import HuckleberryOAuthProvider
 
-        base_url = os.getenv("OAUTH_ISSUER") or os.getenv(
-            "FLY_APP_URL", "http://localhost:8080"
-        )
+        base_url = os.getenv("OAUTH_ISSUER") or os.getenv("FLY_APP_URL", "http://localhost:8080")
         auth = HuckleberryOAuthProvider(base_url=base_url)
 
     mcp = FastMCP("huckleberry-mcp", auth=auth)

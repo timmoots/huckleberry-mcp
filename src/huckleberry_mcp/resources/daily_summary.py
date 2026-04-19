@@ -8,8 +8,8 @@ without burning tool calls.
 from __future__ import annotations
 
 from ..auth import get_api
-from ..utils import default_timezone, today_range, to_local_iso
 from ..tools.children import validate_child_uid
+from ..utils import default_timezone, to_local_iso, today_range
 
 
 async def _build_summary(child_uid: str) -> str:
@@ -45,9 +45,8 @@ async def _build_summary(child_uid: str) -> str:
     pumps = await api.list_pump_intervals(child_uid, start, now)
     pump_ml = 0.0
     for p in pumps:
-        total = (
-            getattr(p, "totalAmount", None)
-            or (getattr(p, "leftAmount", 0) or 0) + (getattr(p, "rightAmount", 0) or 0)
+        total = getattr(p, "totalAmount", None) or (getattr(p, "leftAmount", 0) or 0) + (
+            getattr(p, "rightAmount", 0) or 0
         )
         units = getattr(p, "units", "ml")
         if total:

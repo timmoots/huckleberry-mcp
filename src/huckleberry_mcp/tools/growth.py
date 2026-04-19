@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from ..auth import get_api
 from ..utils import parse_dt, to_local_iso
@@ -11,13 +11,13 @@ from .children import validate_child_uid
 
 
 async def log_growth(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
-    weight: Optional[float] = None,
-    height: Optional[float] = None,
-    head: Optional[float] = None,
+    weight: float | None = None,
+    height: float | None = None,
+    head: float | None = None,
     units: str = "imperial",
-    timestamp: Optional[str] = None,
+    timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Log growth measurements. At least one of weight/height/head required.
 
@@ -53,7 +53,7 @@ async def log_growth(
     }
 
 
-async def get_latest_growth(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def get_latest_growth(child_uid: str | None = None) -> dict[str, Any]:
     """Get the most recent growth record."""
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
@@ -71,10 +71,10 @@ async def get_latest_growth(child_uid: Optional[str] = None) -> dict[str, Any]:
 
 
 async def get_growth_history(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch growth history (default last 30 days)."""
     child_uid = await validate_child_uid(child_uid)

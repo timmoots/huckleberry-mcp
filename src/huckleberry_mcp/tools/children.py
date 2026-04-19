@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..auth import get_api
 from ..utils import resolve_child_uid
@@ -40,7 +40,7 @@ async def list_children() -> list[dict[str, Any]]:
     return out
 
 
-async def get_child_name(child_uid: Optional[str] = None) -> Optional[str]:
+async def get_child_name(child_uid: str | None = None) -> str | None:
     """Get a child's display name.
 
     Args:
@@ -57,7 +57,7 @@ async def get_child_name(child_uid: Optional[str] = None) -> Optional[str]:
     return None
 
 
-async def validate_child_uid(child_uid: Optional[str] = None) -> str:
+async def validate_child_uid(child_uid: str | None = None) -> str:
     """Resolve and validate a child_uid. Returns the concrete uid."""
     child_uid = resolve_child_uid(child_uid)
     api = await get_api()

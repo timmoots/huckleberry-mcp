@@ -7,7 +7,7 @@ Timezone contract: naive datetimes are interpreted as America/New_York
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from ..auth import get_api
 from ..utils import parse_dt, to_local_iso
@@ -15,12 +15,12 @@ from .children import validate_child_uid
 
 
 async def log_bottle_feeding(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
     amount: float,
     bottle_type: str = "Formula",
     units: str = "ml",
-    timestamp: Optional[str] = None,
+    timestamp: str | None = None,
 ) -> dict[str, Any]:
     """Log a bottle feed.
 
@@ -61,12 +61,12 @@ async def log_bottle_feeding(
 
 
 async def log_breastfeeding(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
     start_time: str,
-    end_time: Optional[str] = None,
-    left_duration_minutes: Optional[int] = None,
-    right_duration_minutes: Optional[int] = None,
+    end_time: str | None = None,
+    left_duration_minutes: int | None = None,
+    right_duration_minutes: int | None = None,
     last_side: str = "left",
 ) -> dict[str, Any]:
     """Retroactively log a breastfeeding session.
@@ -119,7 +119,7 @@ async def log_breastfeeding(
 
 
 async def start_breastfeeding(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
     side: str = "left",
 ) -> dict[str, Any]:
@@ -132,7 +132,7 @@ async def start_breastfeeding(
     return {"success": True, "message": f"Started nursing on {side}", "side": side}
 
 
-async def pause_feeding(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def pause_feeding(child_uid: str | None = None) -> dict[str, Any]:
     """Pause a running nursing timer."""
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
@@ -140,7 +140,7 @@ async def pause_feeding(child_uid: Optional[str] = None) -> dict[str, Any]:
     return {"success": True, "message": "Paused nursing"}
 
 
-async def resume_feeding(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def resume_feeding(child_uid: str | None = None) -> dict[str, Any]:
     """Resume a paused nursing timer."""
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
@@ -148,7 +148,7 @@ async def resume_feeding(child_uid: Optional[str] = None) -> dict[str, Any]:
     return {"success": True, "message": "Resumed nursing"}
 
 
-async def switch_feeding_side(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def switch_feeding_side(child_uid: str | None = None) -> dict[str, Any]:
     """Switch to the other side during a running or paused nursing timer."""
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
@@ -156,7 +156,7 @@ async def switch_feeding_side(child_uid: Optional[str] = None) -> dict[str, Any]
     return {"success": True, "message": "Switched nursing side"}
 
 
-async def complete_feeding(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def complete_feeding(child_uid: str | None = None) -> dict[str, Any]:
     """Complete and save an active nursing timer."""
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
@@ -164,7 +164,7 @@ async def complete_feeding(child_uid: Optional[str] = None) -> dict[str, Any]:
     return {"success": True, "message": "Completed nursing"}
 
 
-async def cancel_feeding(child_uid: Optional[str] = None) -> dict[str, Any]:
+async def cancel_feeding(child_uid: str | None = None) -> dict[str, Any]:
     """Cancel and discard an active nursing timer."""
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
@@ -173,10 +173,10 @@ async def cancel_feeding(child_uid: Optional[str] = None) -> dict[str, Any]:
 
 
 async def get_feeding_history(
-    child_uid: Optional[str] = None,
+    child_uid: str | None = None,
     *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch feeding history (nursing + bottle)."""
     child_uid = await validate_child_uid(child_uid)
