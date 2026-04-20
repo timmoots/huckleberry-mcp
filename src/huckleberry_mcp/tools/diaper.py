@@ -109,7 +109,7 @@ async def get_diaper_history(
     """
     child_uid = await validate_child_uid(child_uid)
     api = await get_api()
-    end_dt = parse_dt(end_date)
+    end_dt = parse_dt(end_date, end_of_day=True)
     start_dt = parse_dt(start_date) if start_date else (end_dt - timedelta(days=7))
 
     intervals = await api.list_diaper_intervals(child_uid, start_dt, end_dt)

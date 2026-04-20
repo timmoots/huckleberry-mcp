@@ -34,24 +34,36 @@ def resolve_child_uid(passed: str | None) -> str:
     )
 
 
-def parse_dt(value: str | datetime | None, *, default_now: bool = True) -> datetime:
+def parse_dt(
+    value: str | datetime | None,
+    *,
+    default_now: bool = True,
+    end_of_day: bool = False,
+) -> datetime:
     """Parse an ISO datetime (or pass through datetime).
 
     - None + default_now=True -> current UTC time
     - Naive datetime -> localized to default timezone
     - String with 'Z' / offset -> honored as-is
     - Naive ISO string -> interpreted in default timezone
+
+    If `end_of_day` is True and `value` is a date-only string (YYYY-MM-DD),
+    the result is bumped to 23:59:59.999999 in the default timezone so
+    history queries include events on that full day.
     """
     if value is None:
         if not default_now:
             raise ValueError("datetime is required")
         return datetime.now(UTC)
+    date_only = isinstance(value, str) and len(value) == 10 and value.count("-") == 2
     if isinstance(value, datetime):
         dt = value
     else:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=default_timezone())
+    if end_of_day and date_only:
+        dt = dt.replace(hour=23, minute=59, second=59, microsecond=999999)
     return dt
 
 
